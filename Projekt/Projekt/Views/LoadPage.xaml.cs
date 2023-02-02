@@ -5,10 +5,12 @@ using System.Text;
 using System.Threading.Tasks;
 using Xamarin.Forms;
 using Xamarin.Forms.Xaml;
+using Xamarin.Essentials;
 using Projekt.Models;
 using System;
 using System.Net.Http;
 using Newtonsoft.Json;
+using MonkeyCache.FileStore;
 
 namespace Projekt.Views
 {
@@ -18,16 +20,50 @@ namespace Projekt.Views
         HttpClient httpClient = new HttpClient();
         public LoadPage()
         {
+            Barrel.ApplicationId = "Zapisywanie cache";
             InitializeComponent();
         }
         private async void Button_Clicked(object sender, EventArgs e)
         {
+            var books = await GetBooks();
+            
+            if (books != null)
+            {
+                listaPolecanych.ItemsSource = books.Books;
+            }
 
-            var resultJson = await httpClient.GetStringAsync("https://api.npoint.io/3af3e88339851fb342cc");
+        }
+        private async Task<ListaKsiazek> GetBooks()
+        {
+            try
+            {
+                var books = new ListaKsiazek();
+                books.Books = new List<BookList>();
+                const string url = "https://api.npoint.io/3af3e88339851fb342cc";
 
-            var result = JsonConvert.DeserializeObject<BookList[]>(resultJson);
+                if (Connectivity.NetworkAccess != NetworkAccess.Internet && Barrel.Current.IsExpired(key: url))
+                {
+                    await Task.Yield();
+                    return Barrel.Current.Get<ListaKsiazek>(key: url);
+                }
 
-            listaPolecanych.ItemsSource = result;
+                using (var httpClient = new HttpClient())
+                {
+                    var booksJson = await httpClient.GetStringAsync("https://api.npoint.io/3af3e88339851fb342cc");
+                    books = JsonConvert.DeserializeObject<ListaKsiazek>(booksJson);
+                }
+
+                Barrel.Current.Add(key: url, data: books, expireIn: TimeSpan.FromMinutes(60));
+                return books;
+
+
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex);
+                return null;
+            }
+
         }
     }
 }
